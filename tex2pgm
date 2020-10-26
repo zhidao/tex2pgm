@@ -1,0 +1,100 @@
+#!/bin/sh
+
+# tex2pgm ver.2.8
+# .tex source file to EPS/PGM file converter
+#
+# 2004. 3.16. Created(ported from .c source). : Zhidao
+# 2010. 8.31. Last updated. : Zhidao
+
+LATEX=`which platex`
+DVIPS=`which dvips`
+PSTOPNM=`which pstopnm`
+
+if [ "$1" = "" -o "$1" = "-h" -o "$1" = "-help" -o "$1" = "--help" ]; then
+  echo "Usage: tex2pgm <option> files ..."
+  echo "option:"
+  echo " -p <preamble file(.tex)>  insert preamble file"
+  echo " -u <package file(.sty)>   insert package file"
+  echo " -e <expression>           directly convert the given expression"
+  echo " -h                        show this message"
+  exit 0
+fi
+
+test -x ${LATEX} || { echo "latex is not installed." ; exit 1; }
+test -x ${DVIPS} || { echo "dvips is not installed." ; exit 1; }
+test -x ${PSTOPNM} || { echo "pstopnm is not installed." ; exit 1; }
+
+# header
+header="\\documentclass[12pt]{jarticle}"
+
+# temporary file
+tmpfile=""
+
+tex2pgm_body(){
+  tmpfile=`mktemp ${srcfile}.XXXXXX`
+  texfile=${tmpfile}.tex
+
+  cat << EOS >> ${texfile}
+${header}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\begin{document}
+\thispagestyle{empty}
+\include{${srcfile}}
+\end{document}
+EOS
+
+  # compile LaTeX and create EPS file
+  dvifile=${tmpfile}.dvi
+  psfile=${tmpfile}.ps
+
+  $LATEX ${texfile}
+  $DVIPS -E ${dvifile}
+
+  # convert EPS file to PGM file
+  if [ -x $PSTOPNM ]; then
+    pgmfile=${srcfile}.pgm
+    $PSTOPNM -portrait -pgm ${psfile}
+    mv ${tmpfile}001.pgm ${pgmfile}
+    mv ${psfile} ${srcfile}.eps
+  fi
+
+  # cleanup temporary files
+  rm ${tmpfile}* ${srcfile}.aux
+}
+
+# preamble, package, body
+while [ "$1" ]
+do
+  case "$1" in
+    -nonja) # use dvips.nonja
+      DVIPS=`which dvips.nonja`
+      ;;
+    -p) # preamble
+      shift
+      header="${header}\\include{$1}"
+      ;;
+    -u) # package
+      shift
+      header="${header}\\usepackage{$1}"
+      ;;
+    -e) # direct expression
+      shift
+      srcfile=`mktemp tex2pgm.XXXXXX` && {
+        echo "\\[ $1 \\]" >> ${srcfile}.tex
+        tex2pgm_body
+        rm ${srcfile}.tex ${srcfile}
+      }
+      ;;
+    *) # body
+      # create LaTeX source file
+      srcfile=`dirname "$1"`/`basename "$1" .tex`
+      echo ${srcfile}
+      tex2pgm_body
+      ;;
+  esac
+  shift
+done
+
+exit 0
